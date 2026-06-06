@@ -9,9 +9,11 @@ import {
   GraduationCap,
   HeartPulse,
   LayoutDashboard,
+  LogOut,
 } from "lucide-react";
 
 import { cn } from "@/lib/utils";
+import { LogoutButton } from "@/components/logout-button";
 
 const navItems = [
   { label: "Today", href: "/", icon: LayoutDashboard },
@@ -69,6 +71,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             );
           })}
         </nav>
+
+        <div className="absolute inset-x-4 bottom-5">
+          <LogoutButton
+            variant="ghost"
+            className="h-11 w-full justify-start border border-white/10 bg-white/[0.02] px-3 text-zinc-400 hover:bg-white/[0.04] hover:text-white"
+          >
+            <LogOut className="size-4" />
+            Logout
+          </LogoutButton>
+        </div>
       </div>
 
       <main className="min-h-screen pb-24 lg:pl-64">
@@ -82,9 +94,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
                 VANTA
               </p>
             </Link>
-            <div className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-400">
-              Today
-            </div>
+            <LogoutButton
+              variant="ghost"
+              size="sm"
+              className="border border-white/10 bg-white/[0.02] text-zinc-400 hover:bg-white/[0.04] hover:text-white"
+            />
           </div>
 
           {children}

@@ -1,11 +1,18 @@
 import { AppShell } from "@/components/dashboard/app-shell";
+import { StatCard } from "@/components/dashboard/stat-card";
 
 export function PlaceholderPage({
   title,
   description,
+  cards = [],
 }: {
   title: string;
   description: string;
+  cards?: {
+    title: string;
+    body: string;
+    meta?: string;
+  }[];
 }) {
   return (
     <AppShell>
@@ -21,11 +28,18 @@ export function PlaceholderPage({
         </p>
       </div>
 
-      <section className="rounded-lg border border-white/10 bg-[#0d1117] p-6">
-        <div className="flex min-h-56 items-center justify-center rounded-md border border-dashed border-white/10 bg-black/20">
-          <p className="text-sm text-zinc-500">Placeholder content</p>
-        </div>
-      </section>
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {cards.map((card) => (
+          <StatCard key={card.title} title={card.title}>
+            <p className="text-2xl font-semibold text-white">{card.body}</p>
+            {card.meta ? (
+              <p className="mt-3 text-sm leading-6 text-zinc-400">
+                {card.meta}
+              </p>
+            ) : null}
+          </StatCard>
+        ))}
+      </div>
     </AppShell>
   );
 }
