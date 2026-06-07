@@ -26,6 +26,9 @@ export type VantaProfile = typeof defaultProfile & {
 export type WorkoutTemplate = {
   id: string;
   name: string;
+  description?: string | null;
+  progression_rule?: string | null;
+  current_context?: string | null;
   sort_order?: number | null;
   order_index?: number | null;
   exercises: WorkoutExercise[];
@@ -34,7 +37,8 @@ export type WorkoutTemplate = {
 export type WorkoutExercise = {
   id?: string;
   template_id?: string;
-  name: string;
+  name?: string;
+  exercise_name?: string;
   sort_order?: number | null;
   order_index?: number | null;
   sets?: number | null;
@@ -52,8 +56,8 @@ export type WorkoutExercise = {
 
 export type Course = {
   id: string;
-  code: string;
-  name: string;
+  course_code: string;
+  course_name: string;
   priority_level: number;
   uses_lecture_tracking: boolean;
   notes?: string | null;
@@ -66,7 +70,7 @@ export type LectureProgress = {
   learned: boolean;
   notes_written: boolean;
   practice_completed: boolean;
-  courses?: Pick<Course, "code" | "name"> | null;
+  courses?: Pick<Course, "course_code" | "course_name"> | null;
 };
 
 export type SchoolEvent = {
@@ -79,15 +83,29 @@ export type SchoolEvent = {
   location?: string | null;
   event_type: string;
   priority: "low" | "medium" | "high";
-  courses?: Pick<Course, "code" | "name"> | null;
+  courses?: Pick<Course, "course_code" | "course_name"> | null;
+};
+
+export type WorkoutSession = {
+  id: string;
+  user_id?: string;
+  template_id?: string | null;
+  template_name?: string | null;
+  status?: string | null;
+  started_at?: string | null;
+  completed_at?: string | null;
+  created_at?: string | null;
+  workout_templates?: Pick<WorkoutTemplate, "name"> | null;
 };
 
 export type VantaData = {
   userId: string;
   profile: VantaProfile | null;
   templates: WorkoutTemplate[];
+  workoutSessions: WorkoutSession[];
   courses: Course[];
   lectureProgress: LectureProgress[];
+  schoolEvents: SchoolEvent[];
   highPriorityEvents: SchoolEvent[];
   initialized: boolean;
   setupErrors: string[];
@@ -97,7 +115,6 @@ function exerciseDefaults(name: string, sortOrder: number) {
   const singleArm = name === "Single-Arm DB Preacher Curl";
 
   return {
-    name,
     order_index: sortOrder,
     sets: 2,
     rep_min: 4,
@@ -206,29 +223,80 @@ async function ensureWorkoutTemplates(supabase: Db, userId: string) {
     let templateId = firstRow(existingTemplate)?.id as string | undefined;
 
     if (!templateId) {
-      const { data: newTemplate, error: insertError } = await supabase
-        .from("workout_templates")
-        .insert({
+      const insertAttempts: Record<string, string | number | null>[] = [
+        {
           user_id: userId,
           name: template.name,
+          description: null,
           order_index: template.sort_order,
           progression_rule: progressionRule,
           current_context: null,
-        })
-        .select("id")
-        .single();
+        },
+        {
+          user_id: userId,
+          name: template.name,
+          description: null,
+          order_index: template.sort_order,
+        },
+        {
+          user_id: userId,
+          name: template.name,
+          order_index: template.sort_order,
+        },
+      ];
 
-      if (insertError) {
-        result.warnings.push(errorMessage(`workout_templates ${template.name} insert`, insertError));
+      let insertErrorMessage: string | null = null;
+
+      for (const payload of insertAttempts) {
+        const { data: newTemplate, error: insertError } = await supabase
+          .from("workout_templates")
+          .insert(payload)
+          .select("id")
+          .single();
+
+        if (!insertError) {
+          templateId = newTemplate.id;
+          insertErrorMessage = null;
+          break;
+        }
+
+        insertErrorMessage = insertError.message;
+      }
+
+      if (!templateId) {
+        result.warnings.push(
+          `workout_templates ${template.name} insert: ${insertErrorMessage ?? "unknown Supabase error"}`,
+        );
         continue;
       }
 
-      templateId = newTemplate.id;
       result.inserted = true;
     }
+  }
+
+  return result;
+}
+
+async function ensureWorkoutTemplateExercises(supabase: Db, userId: string) {
+  const result = setupResult();
+
+  for (const template of workoutTemplates) {
+    const { data: existingTemplate, error } = await supabase
+      .from("workout_templates")
+      .select("id")
+      .eq("user_id", userId)
+      .eq("name", template.name)
+      .limit(1);
+
+    if (error) {
+      result.warnings.push(errorMessage(`workout_templates ${template.name} select`, error));
+      continue;
+    }
+
+    const templateId = firstRow(existingTemplate)?.id as string | undefined;
 
     if (!templateId) {
-      result.warnings.push(`workout_templates ${template.name} did not return an id`);
+      result.warnings.push(`workout_templates ${template.name} missing for exercise seed`);
       continue;
     }
 
@@ -237,7 +305,7 @@ async function ensureWorkoutTemplates(supabase: Db, userId: string) {
         .from("workout_template_exercises")
         .select("id")
         .eq("template_id", templateId)
-        .eq("name", exerciseName)
+        .eq("exercise_name", exerciseName)
         .limit(1);
 
       if (exerciseError) {
@@ -252,8 +320,8 @@ async function ensureWorkoutTemplates(supabase: Db, userId: string) {
       const { error: insertExerciseError } = await supabase
         .from("workout_template_exercises")
         .insert({
-          user_id: userId,
           template_id: templateId,
+          exercise_name: exerciseName,
           ...exerciseDefaults(exerciseName, index + 1),
         });
 
@@ -273,15 +341,15 @@ async function getCourseIds(supabase: Db, userId: string) {
   const courseIds = new Map<string, string>();
   const { data, error } = await supabase
     .from("courses")
-    .select("id, code")
+    .select("id, course_code")
     .eq("user_id", userId);
 
   if (error) {
     return { courseIds, warnings: [errorMessage("courses id lookup", error)] };
   }
 
-  for (const course of (data ?? []) as Pick<Course, "id" | "code">[]) {
-    courseIds.set(course.code, course.id);
+  for (const course of (data ?? []) as Pick<Course, "id" | "course_code">[]) {
+    courseIds.set(course.course_code, course.id);
   }
 
   return { courseIds, warnings: [] };
@@ -299,11 +367,11 @@ async function ensureCourses(supabase: Db, userId: string): Promise<
       .from("courses")
       .select("id")
       .eq("user_id", userId)
-      .eq("code", course.code)
+      .eq("course_code", course.course_code)
       .limit(1);
 
     if (error) {
-      result.warnings.push(errorMessage(`courses ${course.code} select`, error));
+      result.warnings.push(errorMessage(`courses ${course.course_code} select`, error));
       continue;
     }
 
@@ -314,13 +382,17 @@ async function ensureCourses(supabase: Db, userId: string): Promise<
         .from("courses")
         .insert({
           user_id: userId,
-          ...course,
+          course_code: course.course_code,
+          course_name: course.course_name,
+          priority_level: course.priority_level,
+          uses_lecture_tracking: course.uses_lecture_tracking,
+          notes: course.notes,
         })
         .select("id")
         .single();
 
       if (insertError) {
-        result.warnings.push(errorMessage(`courses ${course.code} insert`, insertError));
+        result.warnings.push(errorMessage(`courses ${course.course_code} insert`, insertError));
         continue;
       }
 
@@ -491,6 +563,9 @@ async function ensureVantaDefaults(supabase: Db, userId: string) {
 
   await runSection("profile", () => ensureProfile(supabase, userId));
   await runSection("workout templates", () => ensureWorkoutTemplates(supabase, userId));
+  await runSection("workout template exercises", () =>
+    ensureWorkoutTemplateExercises(supabase, userId),
+  );
   await runSection("nutrition target", () => ensureNutritionTarget(supabase, userId));
 
   const coursesResult = await runSection("courses", () => ensureCourses(supabase, userId));
@@ -564,6 +639,21 @@ async function getWorkoutTemplates(supabase: Db, userId: string) {
   }));
 }
 
+async function getWorkoutSessions(supabase: Db, userId: string) {
+  const { data, error } = await supabase
+    .from("workout_sessions")
+    .select("*, workout_templates(name)")
+    .eq("user_id", userId)
+    .order("completed_at", { ascending: false })
+    .limit(5);
+
+  if (error) {
+    return [];
+  }
+
+  return (data ?? []) as WorkoutSession[];
+}
+
 async function getCourses(supabase: Db, userId: string) {
   const { data } = await supabase
     .from("courses")
@@ -577,7 +667,7 @@ async function getCourses(supabase: Db, userId: string) {
 async function getLectureProgress(supabase: Db, userId: string) {
   const { data } = await supabase
     .from("lecture_progress")
-    .select("*, courses(code, name)")
+    .select("*, courses(course_code, course_name)")
     .eq("user_id", userId)
     .order("title", { ascending: true });
 
@@ -587,12 +677,24 @@ async function getLectureProgress(supabase: Db, userId: string) {
 async function getHighPriorityEvents(supabase: Db, userId: string) {
   const { data } = await supabase
     .from("school_events")
-    .select("*, courses(code, name)")
+    .select("*, courses(course_code, course_name)")
     .eq("user_id", userId)
     .eq("priority", "high")
-    .gte("due_date", "2026-06-06")
+    .gte("due_date", "2026-06-07")
     .order("due_date", { ascending: true })
     .limit(10);
+
+  return (data ?? []) as SchoolEvent[];
+}
+
+async function getSchoolEvents(supabase: Db, userId: string) {
+  const { data } = await supabase
+    .from("school_events")
+    .select("*, courses(course_code, course_name)")
+    .eq("user_id", userId)
+    .gte("due_date", "2026-06-07")
+    .order("due_date", { ascending: true })
+    .limit(50);
 
   return (data ?? []) as SchoolEvent[];
 }
@@ -610,11 +712,13 @@ export async function getVantaData(): Promise<VantaData> {
   }
 
   const { initialized, setupErrors } = await ensureVantaDefaults(supabase, user.id);
-  const [profile, templates, courseRows, progress, events] = await Promise.all([
+  const [profile, templates, sessions, courseRows, progress, schoolEventRows, events] = await Promise.all([
     getProfile(supabase, user.id),
     getWorkoutTemplates(supabase, user.id),
+    getWorkoutSessions(supabase, user.id),
     getCourses(supabase, user.id),
     getLectureProgress(supabase, user.id),
+    getSchoolEvents(supabase, user.id),
     getHighPriorityEvents(supabase, user.id),
   ]);
 
@@ -622,8 +726,10 @@ export async function getVantaData(): Promise<VantaData> {
     userId: user.id,
     profile,
     templates,
+    workoutSessions: sessions,
     courses: courseRows,
     lectureProgress: progress,
+    schoolEvents: schoolEventRows,
     highPriorityEvents: events,
     initialized,
     setupErrors,

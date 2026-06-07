@@ -2,22 +2,57 @@ import { Suspense } from "react";
 
 import { AppShell } from "@/components/dashboard/app-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
-import { getVantaData, type WorkoutExercise } from "@/lib/vanta/data";
+import { getVantaData, type WorkoutSession, type WorkoutTemplate } from "@/lib/vanta/data";
 
-function formatRepRange(exercise: WorkoutExercise) {
-  if (exercise.rep_min && exercise.rep_max) {
-    return `${exercise.rep_min}-${exercise.rep_max}`;
-  }
+import { WorkoutFlow } from "./workout-flow";
 
-  return exercise.reps ?? "4-9";
+function sessionTemplateName(session: WorkoutSession | undefined) {
+  return (
+    session?.workout_templates?.name ??
+    session?.template_name ??
+    "Workout"
+  );
 }
 
-function formatRirRange(exercise: WorkoutExercise) {
-  if (exercise.target_rir_min && exercise.target_rir_max) {
-    return `${exercise.target_rir_min}-${exercise.target_rir_max}`;
+function sessionDate(session: WorkoutSession | undefined) {
+  const value = session?.completed_at ?? session?.created_at ?? session?.started_at;
+
+  if (!value) {
+    return "No completed sessions yet";
   }
 
-  return exercise.rir ?? "1-2";
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  }).format(new Date(value));
+}
+
+function getNextTemplate(
+  templates: WorkoutTemplate[],
+  sessions: WorkoutSession[],
+) {
+  if (templates.length === 0) {
+    return null;
+  }
+
+  if (sessions.length === 0) {
+    return (
+      templates.find((template) => template.name.toLowerCase() === "lower") ??
+      templates[0]
+    );
+  }
+
+  const lastName = sessionTemplateName(sessions[0]).toLowerCase();
+  const lastIndex = templates.findIndex(
+    (template) => template.name.toLowerCase() === lastName,
+  );
+
+  if (lastIndex === -1) {
+    return templates.find((template) => template.name.toLowerCase() === "lower") ?? templates[0];
+  }
+
+  return templates[(lastIndex + 1) % templates.length];
 }
 
 export default function TrainingPage() {
@@ -35,7 +70,9 @@ export default function TrainingPage() {
 }
 
 async function TrainingContent() {
-  const { templates, setupErrors } = await getVantaData();
+  const { templates, workoutSessions, setupErrors, userId } = await getVantaData();
+  const lastSession = workoutSessions[0];
+  const nextTemplate = getNextTemplate(templates, workoutSessions);
 
   return (
     <AppShell>
@@ -48,12 +85,15 @@ async function TrainingContent() {
             Training
           </h1>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-            Workout templates from Supabase. Logging comes later.
+            Start the next workout, choose a different template, and log working
+            sets without tracking warm-ups.
           </p>
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">
           <span className="text-zinc-500">Next</span>
-          <span className="ml-3 text-sky-100">Lower</span>
+          <span className="ml-3 text-sky-100">
+            {nextTemplate?.name ?? "No template"}
+          </span>
         </div>
       </div>
 
@@ -63,67 +103,78 @@ async function TrainingContent() {
         </div>
       ) : null}
 
-      <div className="mb-4 grid gap-4 md:grid-cols-3">
-        <StatCard title="Queue Context">
-          <p className="text-2xl font-semibold text-white">Upper done</p>
+      <div className="mb-4 grid gap-4 lg:grid-cols-4">
+        <StatCard title="Last Workout">
+          <p className="text-2xl font-semibold text-white">
+            {lastSession ? sessionTemplateName(lastSession) : "None yet"}
+          </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
-            Lower is next. Sunday is a rest day.
+            {sessionDate(lastSession)}
           </p>
         </StatCard>
-        <StatCard title="Progression">
+        <StatCard title="Next Recommended">
+          <p className="text-2xl font-semibold text-white">
+            {nextTemplate?.name ?? "No template"}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-zinc-400">
+            {workoutSessions.length === 0
+              ? "Defaulting to Lower until session history exists."
+              : "Based on the most recent completed workout."}
+          </p>
+        </StatCard>
+        <StatCard title="Queue Context">
+          <p className="text-2xl font-semibold text-white">
+            {lastSession
+              ? `${sessionTemplateName(lastSession)} done`
+              : "Fresh queue"}
+          </p>
+          <p className="mt-3 text-sm leading-6 text-zinc-400">
+            {nextTemplate
+              ? `${nextTemplate.name} is next in rotation.`
+              : "Seed workout templates to build the queue."}
+          </p>
+        </StatCard>
+        <StatCard title="Progression Rule">
           <p className="text-2xl font-semibold text-white">8 reps</p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
             Add weight after both sets hit 8 reps for 2 successful sessions at
             1-2 RIR.
           </p>
         </StatCard>
-        <StatCard title="Warm-Ups">
-          <p className="text-2xl font-semibold text-white">Not tracked</p>
-          <p className="mt-3 text-sm leading-6 text-zinc-400">
-            Templates show working sets only.
-          </p>
-        </StatCard>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
-        {templates.length > 0 ? (
-          templates.map((template) => (
-            <StatCard key={template.id} title={template.name}>
-              {template.exercises.length > 0 ? (
-                <div className="space-y-3">
-                  {template.exercises.map((exercise) => (
-                    <div
-                      key={`${template.id}-${exercise.name}`}
-                      className="rounded-md border border-white/10 bg-black/20 p-4"
-                    >
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <p className="font-medium text-white">{exercise.name}</p>
-                        <p className="text-sm text-zinc-400">
-                          {exercise.sets ?? 2} sets
-                          {exercise.is_single_arm || exercise.single_arm
-                            ? " per arm"
-                            : ""}{" "}
-                          · {formatRepRange(exercise)} reps ·{" "}
-                          {formatRirRange(exercise)} RIR
-                        </p>
-                      </div>
-                    </div>
-                  ))}
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1.35fr)_minmax(320px,0.65fr)]">
+        <StatCard title="Workout Flow">
+          <WorkoutFlow
+            defaultTemplate={nextTemplate}
+            templates={templates}
+            userId={userId}
+          />
+        </StatCard>
+
+        <StatCard title="Recent Sessions">
+          {workoutSessions.length > 0 ? (
+            <div className="space-y-3">
+              {workoutSessions.map((session) => (
+                <div
+                  key={session.id}
+                  className="rounded-md border border-white/10 bg-black/20 p-4"
+                >
+                  <p className="font-medium text-white">
+                    {sessionTemplateName(session)}
+                  </p>
+                  <p className="mt-2 text-sm text-zinc-400">
+                    {sessionDate(session)}
+                  </p>
                 </div>
-              ) : (
-                <p className="text-sm text-zinc-400">
-                  No exercises found for this template yet.
-                </p>
-              )}
-            </StatCard>
-          ))
-        ) : (
-          <StatCard title="Workout Templates" className="xl:col-span-2">
-            <p className="text-sm text-zinc-400">
-              No workout templates found yet.
+              ))}
+            </div>
+          ) : (
+            <p className="text-sm leading-6 text-zinc-400">
+              No completed workout sessions yet.
             </p>
-          </StatCard>
-        )}
+          )}
+        </StatCard>
       </div>
     </AppShell>
   );

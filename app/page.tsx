@@ -67,7 +67,7 @@ async function TodayContent() {
 
         <StatCard title="Core Recommendation">
           <p className="text-lg font-medium text-white">
-            {topCourse ? `${topCourse.code} first` : "Protect the morning."}
+            {topCourse ? `${topCourse.course_code} first` : "Protect the morning."}
           </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
             {topCourse?.notes ??
@@ -113,7 +113,7 @@ async function TodayContent() {
         <StatCard title="School Priority">
           <p className="text-2xl font-semibold text-white">
             {nextEvent
-              ? `${nextEvent.courses?.code ?? "School"} ${nextEvent.title}`
+              ? `${nextEvent.courses?.course_code ?? "School"} ${nextEvent.title}`
               : "MATH 218 practice"}
           </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
