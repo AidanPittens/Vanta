@@ -1,7 +1,31 @@
+import { Suspense } from "react";
+
 import { AppShell } from "@/components/dashboard/app-shell";
 import { StatCard } from "@/components/dashboard/stat-card";
+import { getVantaData } from "@/lib/vanta/data";
 
 export default function TodayPage() {
+  return (
+    <Suspense
+      fallback={
+        <AppShell>
+          <p className="text-sm text-zinc-400">Loading Vanta...</p>
+        </AppShell>
+      }
+    >
+      <TodayContent />
+    </Suspense>
+  );
+}
+
+async function TodayContent() {
+  const data = await getVantaData();
+  const profile = data.profile;
+  const topCourse = data.courses[0];
+  const nextEvent = data.highPriorityEvents[0];
+  const calories = profile?.calorie_target ?? 2900;
+  const protein = profile?.protein_target ?? 125;
+
   return (
     <AppShell>
       <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
@@ -18,25 +42,36 @@ export default function TodayPage() {
         </div>
         <div className="rounded-md border border-white/10 bg-white/[0.03] px-4 py-3 text-sm text-zinc-300">
           <span className="text-zinc-500">Status</span>
-          <span className="ml-3 text-sky-100">Ready</span>
+          <span className="ml-3 text-sky-100">
+            {data.initialized ? "Vanta initialized" : "Ready"}
+          </span>
         </div>
       </div>
+
+      {data.setupErrors.length > 0 ? (
+        <div className="mb-4 rounded-md border border-amber-300/20 bg-amber-300/10 px-4 py-3 text-sm text-amber-100">
+          Setup needs attention: {data.setupErrors[0]}
+        </div>
+      ) : null}
 
       <div className="grid gap-4 lg:grid-cols-3">
         <StatCard title="Daily Command" className="lg:col-span-2">
           <h2 className="text-2xl font-semibold text-white">
-            Execute the main targets first.
+            {profile ? `${profile.name}'s targets are loaded.` : "Targets loading"}
           </h2>
           <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-400">
-            Keep the day simple: train, hit baseline nutrition, and finish the
-            highest-value school block.
+            {profile?.goal ??
+              "Default setup will appear here after Supabase returns profile data."}
           </p>
         </StatCard>
 
         <StatCard title="Core Recommendation">
-          <p className="text-lg font-medium text-white">Protect the morning.</p>
+          <p className="text-lg font-medium text-white">
+            {topCourse ? `${topCourse.code} first` : "Protect the morning."}
+          </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
-            Start with school practice before smaller tasks pull attention.
+            {topCourse?.notes ??
+              "Start with school practice before smaller tasks pull attention."}
           </p>
         </StatCard>
 
@@ -44,7 +79,9 @@ export default function TodayPage() {
           <div className="flex items-end justify-between gap-4">
             <div>
               <p className="text-4xl font-semibold text-white">Lower</p>
-              <p className="mt-2 text-sm text-zinc-500">Next training focus</p>
+              <p className="mt-2 text-sm text-zinc-500">
+                Upper completed recently. Sunday rest.
+              </p>
             </div>
             <div className="h-16 w-2 rounded-full bg-sky-300/70" />
           </div>
@@ -55,7 +92,7 @@ export default function TodayPage() {
             <div>
               <div className="mb-2 flex justify-between text-sm">
                 <span className="text-zinc-400">Calories</span>
-                <span className="font-medium text-white">0 / 2900</span>
+                <span className="font-medium text-white">0 / {calories}</span>
               </div>
               <div className="h-2 rounded-full bg-white/10">
                 <div className="h-2 w-0 rounded-full bg-sky-300" />
@@ -64,7 +101,7 @@ export default function TodayPage() {
             <div>
               <div className="mb-2 flex justify-between text-sm">
                 <span className="text-zinc-400">Protein</span>
-                <span className="font-medium text-white">0 / 125g</span>
+                <span className="font-medium text-white">0 / {protein}g</span>
               </div>
               <div className="h-2 rounded-full bg-white/10">
                 <div className="h-2 w-0 rounded-full bg-sky-300" />
@@ -75,10 +112,14 @@ export default function TodayPage() {
 
         <StatCard title="School Priority">
           <p className="text-2xl font-semibold text-white">
-            MATH 218 practice
+            {nextEvent
+              ? `${nextEvent.courses?.code ?? "School"} ${nextEvent.title}`
+              : "MATH 218 practice"}
           </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
-            Clear this before lower-priority admin work.
+            {nextEvent
+              ? `Due ${nextEvent.due_date}${nextEvent.location ? ` at ${nextEvent.location}` : ""}.`
+              : "Clear this before lower-priority admin work."}
           </p>
         </StatCard>
 
