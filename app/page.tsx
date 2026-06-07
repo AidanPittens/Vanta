@@ -118,7 +118,7 @@ async function TodayContent() {
           </p>
           <p className="mt-3 text-sm leading-6 text-zinc-400">
             {nextEvent
-              ? `Due ${nextEvent.due_date}${nextEvent.location ? ` at ${nextEvent.location}` : ""}.`
+              ? `Due ${nextEvent.date}${nextEvent.location ? ` at ${nextEvent.location}` : ""}.`
               : "Clear this before lower-priority admin work."}
           </p>
         </StatCard>

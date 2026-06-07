@@ -66,10 +66,12 @@ export type Course = {
 export type LectureProgress = {
   id?: string;
   course_id?: string;
-  title: string;
+  lecture_label: string;
+  topic?: string | null;
   learned: boolean;
   notes_written: boolean;
   practice_completed: boolean;
+  reviewed?: boolean;
   courses?: Pick<Course, "course_code" | "course_name"> | null;
 };
 
@@ -77,12 +79,14 @@ export type SchoolEvent = {
   id?: string;
   course_id?: string;
   title: string;
-  due_date: string;
-  start_time?: string | null;
-  end_time?: string | null;
+  date: string;
+  time?: string | null;
   location?: string | null;
+  submission_method?: string | null;
   event_type: string;
   priority: "low" | "medium" | "high";
+  status?: string | null;
+  notes?: string | null;
   courses?: Pick<Course, "course_code" | "course_name"> | null;
 };
 
@@ -432,11 +436,11 @@ async function ensureLectureProgress(
       .select("id")
       .eq("user_id", userId)
       .eq("course_id", courseId)
-      .eq("title", progress.title)
+      .eq("lecture_label", progress.lecture_label)
       .limit(1);
 
     if (error) {
-      result.warnings.push(errorMessage(`${progress.course_code} ${progress.title} select`, error));
+      result.warnings.push(errorMessage(`${progress.course_code} ${progress.lecture_label} select`, error));
       continue;
     }
 
@@ -445,10 +449,12 @@ async function ensureLectureProgress(
     }
 
     const row = {
-      title: progress.title,
+      lecture_label: progress.lecture_label,
+      topic: progress.topic,
       learned: progress.learned,
       notes_written: progress.notes_written,
       practice_completed: progress.practice_completed,
+      reviewed: progress.reviewed,
     };
     const { error: insertError } = await supabase.from("lecture_progress").insert({
       user_id: userId,
@@ -457,7 +463,7 @@ async function ensureLectureProgress(
     });
 
     if (insertError) {
-      result.warnings.push(errorMessage(`${progress.course_code} ${progress.title} insert`, insertError));
+      result.warnings.push(errorMessage(`${progress.course_code} ${progress.lecture_label} insert`, insertError));
       continue;
     }
 
@@ -495,7 +501,7 @@ async function ensureSchoolEvents(
       .eq("user_id", userId)
       .eq("course_id", courseId)
       .eq("title", event.title)
-      .eq("due_date", event.due_date)
+      .eq("date", event.date)
       .limit(1);
 
     if (error) {
@@ -509,12 +515,14 @@ async function ensureSchoolEvents(
 
     const row = {
       title: event.title,
-      due_date: event.due_date,
-      start_time: event.start_time,
-      end_time: event.end_time,
-      location: event.location,
       event_type: event.event_type,
+      date: event.date,
+      time: event.time,
+      location: event.location,
+      submission_method: event.submission_method,
       priority: event.priority,
+      status: event.status ?? "upcoming",
+      notes: event.notes,
     };
     const { error: insertError } = await supabase.from("school_events").insert({
       user_id: userId,
@@ -669,7 +677,7 @@ async function getLectureProgress(supabase: Db, userId: string) {
     .from("lecture_progress")
     .select("*, courses(course_code, course_name)")
     .eq("user_id", userId)
-    .order("title", { ascending: true });
+    .order("lecture_label", { ascending: true });
 
   return (data ?? []) as LectureProgress[];
 }
@@ -680,8 +688,8 @@ async function getHighPriorityEvents(supabase: Db, userId: string) {
     .select("*, courses(course_code, course_name)")
     .eq("user_id", userId)
     .eq("priority", "high")
-    .gte("due_date", "2026-06-07")
-    .order("due_date", { ascending: true })
+    .gte("date", "2026-06-07")
+    .order("date", { ascending: true })
     .limit(10);
 
   return (data ?? []) as SchoolEvent[];
@@ -692,8 +700,8 @@ async function getSchoolEvents(supabase: Db, userId: string) {
     .from("school_events")
     .select("*, courses(course_code, course_name)")
     .eq("user_id", userId)
-    .gte("due_date", "2026-06-07")
-    .order("due_date", { ascending: true })
+    .gte("date", "2026-06-07")
+    .order("date", { ascending: true })
     .limit(50);
 
   return (data ?? []) as SchoolEvent[];

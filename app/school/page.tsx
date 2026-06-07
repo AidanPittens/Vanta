@@ -13,16 +13,12 @@ const today = new Date("2026-06-07T00:00:00");
 const highPriorityTypes = new Set(["quiz", "midterm", "final", "lab", "lab_test"]);
 
 function formatEventMeta(event: {
-  due_date: string;
-  start_time?: string | null;
-  end_time?: string | null;
+  date: string;
+  time?: string | null;
   location?: string | null;
+  submission_method?: string | null;
 }) {
-  const time =
-    event.start_time && event.end_time
-      ? `${event.start_time}-${event.end_time}`
-      : event.start_time;
-  const parts = [event.due_date, time, event.location].filter(Boolean);
+  const parts = [event.date, event.time, event.location, event.submission_method].filter(Boolean);
 
   return parts.join(" · ");
 }
@@ -39,7 +35,7 @@ function isHighPriorityEvent(event: SchoolEvent) {
     return true;
   }
 
-  return event.event_type === "assignment" && daysUntil(event.due_date) <= 3;
+  return event.event_type === "assignment" && daysUntil(event.date) <= 3;
 }
 
 function priorityLabel(course: Course, events: SchoolEvent[]) {
@@ -51,7 +47,7 @@ function priorityLabel(course: Course, events: SchoolEvent[]) {
     return "High priority";
   }
 
-  if (events.some((event) => event.event_type === "assignment" && daysUntil(event.due_date) <= 7)) {
+  if (events.some((event) => event.event_type === "assignment" && daysUntil(event.date) <= 7)) {
     return "Assignment soon";
   }
 
@@ -61,7 +57,13 @@ function priorityLabel(course: Course, events: SchoolEvent[]) {
 function lastLearned(progress: LectureProgress[]) {
   const learned = progress.filter((item) => item.learned);
 
-  return learned.at(-1)?.title ?? null;
+  const item = learned.at(-1);
+
+  if (!item) {
+    return null;
+  }
+
+  return item.topic ? `${item.lecture_label}: ${item.topic}` : item.lecture_label;
 }
 
 function nextUp(course: Course, progress: LectureProgress[], events: SchoolEvent[]) {
@@ -70,15 +72,19 @@ function nextUp(course: Course, progress: LectureProgress[], events: SchoolEvent
   );
 
   if (incomplete) {
+    const label = incomplete.topic
+      ? `${incomplete.lecture_label}: ${incomplete.topic}`
+      : incomplete.lecture_label;
+
     if (!incomplete.notes_written) {
-      return `Write notes for ${incomplete.title}`;
+      return `Write notes for ${label}`;
     }
 
     if (!incomplete.practice_completed) {
-      return `Practice ${incomplete.title}`;
+      return `Practice ${label}`;
     }
 
-    return `Learn ${incomplete.title}`;
+    return `Learn ${label}`;
   }
 
   const importantEvent = events.find(isHighPriorityEvent) ?? events[0];
